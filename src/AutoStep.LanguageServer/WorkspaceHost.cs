@@ -36,7 +36,7 @@ namespace AutoStep.LanguageServer
         private readonly ILoggerFactory logFactory;
         private readonly ILogger<WorkspaceHost> logger;
         private readonly ConcurrentQueue<Action> buildCompletion = new ConcurrentQueue<Action>();
-        private readonly ConcurrentDictionary<string, OpenFileState> openContent = new ConcurrentDictionary<string, OpenFileState>();
+        private readonly ConcurrentDictionary<Uri, OpenFileState> openContent = new ConcurrentDictionary<Uri, OpenFileState>();
         private readonly PackageCollectionWatcher packageWatcher = new PackageCollectionWatcher();
 
         private int currentBackgroundTasks;
@@ -117,9 +117,15 @@ namespace AutoStep.LanguageServer
                 throw new ArgumentNullException(nameof(uri));
             }
 
-            var path = RelativePathFromUri(uri);
+            if (RootFolder is null)
+            {
+                // Something has called this method before the Initialise method has been called...
+                throw new InvalidOperationException();
+            }
 
-            if (openContent.ContainsKey(path) && ProjectContext is object && ProjectContext.Project.AllFiles.TryGetValue(path, out file))
+            var relativeUri = RootFolder.MakeRelativeUri(uri);
+
+            if (openContent.ContainsKey(relativeUri) && ProjectContext is object && ProjectContext.Project.AllFiles.TryGetValue(relativeUri.ToString(), out file))
             {
                 return true;
             }
@@ -142,9 +148,9 @@ namespace AutoStep.LanguageServer
                 throw new InvalidOperationException();
             }
 
-            var name = Path.GetRelativePath(RootFolder.LocalPath, uri.LocalPath);
+            var relativeUri = RootFolder.MakeRelativeUri(uri);
 
-            openContent[name] = new OpenFileState
+            openContent[relativeUri] = new OpenFileState
             {
                 Content = documentContent,
                 LastModifyTime = DateTime.UtcNow,
@@ -167,10 +173,10 @@ namespace AutoStep.LanguageServer
                 throw new InvalidOperationException();
             }
 
-            var name = Path.GetRelativePath(RootFolder.LocalPath, uri.LocalPath);
+            var relativeUri = RootFolder.MakeRelativeUri(uri);
 
             // Look at the set of files in the project.
-            if (openContent.TryGetValue(name, out var state))
+            if (openContent.TryGetValue(relativeUri, out var state))
             {
                 state.Content = newContent;
                 state.LastModifyTime = DateTime.UtcNow;
@@ -198,10 +204,10 @@ namespace AutoStep.LanguageServer
                 throw new InvalidOperationException();
             }
 
-            var name = Path.GetRelativePath(RootFolder.LocalPath, uri.LocalPath);
+            var relative = RootFolder.MakeRelativeUri(uri);
 
             // Just remove from the set of open content.
-            openContent.Remove(name, out var _);
+            openContent.Remove(relative, out var _);
         }
 
         /// <inheritdoc/>
@@ -258,9 +264,14 @@ namespace AutoStep.LanguageServer
             {
                 RunInBackground(uri, (uri, cancelToken) =>
                 {
+                    if (RootFolder is null)
+                    {
+                        throw new InvalidOperationException();
+                    }
+
                     if (ProjectContext is object)
                     {
-                        var name = Path.GetRelativePath(RootFolder!.LocalPath, uri.LocalPath);
+                        var name = RootFolder.MakeRelativeUri(uri).ToString();
                         var extension = Path.GetExtension(name);
 
                         // Add the project file to the set.
@@ -321,7 +332,12 @@ namespace AutoStep.LanguageServer
             {
                 RunInBackground(uri, (uri, cancelToken) =>
                 {
-                    var name = Path.GetRelativePath(RootFolder!.LocalPath, uri.LocalPath);
+                    if (RootFolder is null)
+                    {
+                        throw new InvalidOperationException();
+                    }
+
+                    var name = RootFolder.MakeRelativeUri(uri).ToString();
                     var extension = Path.GetExtension(name);
 
                     if (ProjectContext is null)
@@ -468,7 +484,8 @@ namespace AutoStep.LanguageServer
             // Go through our open files, feed diagnostics back.
             foreach (var openPath in openContent.Keys)
             {
-                if (project.AllFiles.TryGetValue(openPath, out var file))
+                var path = openPath.ToString();
+                if (project.AllFiles.TryGetValue(path, out var file))
                 {
                     IssueDiagnosticsForFile(openPath, file);
                 }
@@ -625,7 +642,9 @@ namespace AutoStep.LanguageServer
         {
             return new LanguageServerSource(fileEntry.Relative, fileEntry.Absolute, (relative) =>
             {
-                if (openContent.TryGetValue(relative, out var result))
+                var uri = new Uri(fileEntry.Relative, UriKind.Relative);
+
+                if (openContent.TryGetValue(uri, out var result))
                 {
                     return result;
                 }
@@ -710,18 +729,7 @@ namespace AutoStep.LanguageServer
             });
         }
 
-        private string RelativePathFromUri(Uri fileUri)
-        {
-            if (RootFolder is null)
-            {
-                // Something has called this method before the Initialise method has been called...
-                throw new InvalidOperationException();
-            }
-
-            return Path.GetRelativePath(RootFolder.LocalPath, fileUri.LocalPath);
-        }
-
-        private void IssueDiagnosticsForFile(string path, ProjectFile file)
+        private void IssueDiagnosticsForFile(Uri relativePath, ProjectFile file)
         {
             LanguageOperationResult? primary = null;
             LanguageOperationResult? secondary = null;
@@ -754,7 +762,7 @@ namespace AutoStep.LanguageServer
                 }
             }
 
-            var vsCodeUri = new Uri(RootFolder!, path);
+            var vsCodeUri = new Uri(RootFolder!, relativePath);
 
             var diagnosticParams = new PublishDiagnosticsParams
             {
