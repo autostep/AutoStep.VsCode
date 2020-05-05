@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
-using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoStep.Definitions.Interaction;
@@ -12,6 +11,7 @@ using AutoStep.Elements.Interaction;
 using AutoStep.Elements.Test;
 using AutoStep.Extensions;
 using AutoStep.Extensions.Abstractions;
+using AutoStep.Extensions.Watch;
 using AutoStep.Language;
 using AutoStep.Language.Interaction;
 using AutoStep.Language.Test.Matching;
@@ -29,7 +29,7 @@ namespace AutoStep.LanguageServer
     /// <summary>
     /// Centralised management of the workspace state.
     /// </summary>
-    public class WorkspaceHost : IWorkspaceHost
+    public sealed class WorkspaceHost : IWorkspaceHost, IDisposable
     {
         private readonly ILanguageServer server;
         private readonly ILanguageTaskQueue taskQueue;
@@ -37,6 +37,7 @@ namespace AutoStep.LanguageServer
         private readonly ILogger<WorkspaceHost> logger;
         private readonly ConcurrentQueue<Action> buildCompletion = new ConcurrentQueue<Action>();
         private readonly ConcurrentDictionary<string, OpenFileState> openContent = new ConcurrentDictionary<string, OpenFileState>();
+        private readonly PackageCollectionWatcher packageWatcher = new PackageCollectionWatcher();
 
         private int currentBackgroundTasks;
 
@@ -53,6 +54,7 @@ namespace AutoStep.LanguageServer
             this.taskQueue = taskQueue;
             this.logFactory = logFactory;
             this.logger = logger;
+            packageWatcher.OnWatchedPackageDirty += PackageWatcher_OnWatchedPackageDirty;
         }
 
         /// <summary>
@@ -410,6 +412,11 @@ namespace AutoStep.LanguageServer
             return null;
         }
 
+        private void PackageWatcher_OnWatchedPackageDirty(object? sender, ILocalExtensionPackageMetadata e)
+        {
+            InitiateBackgroundProjectLoad();
+        }
+
         private void InitiateBackgroundProjectLoad()
         {
             // Load the project in the background (in the task queue).
@@ -500,12 +507,38 @@ namespace AutoStep.LanguageServer
                     throw new InvalidOperationException();
                 }
 
+                // Suspend change tracking.
+                packageWatcher.Suspend();
+
                 // Load the configuration file.
                 var config = GetConfiguration(RootDirectoryInfo.FullName);
 
-                // Define file sets for interaction and test.
-                var interactionFiles = FileSet.Create(RootDirectoryInfo.FullName, config.GetInteractionFileGlobs(), new string[] { ".autostep/**" });
-                var testFiles = FileSet.Create(RootDirectoryInfo.FullName, config.GetTestFileGlobs(), new string[] { ".autostep/**" });
+                var extensionsDir = Path.Combine(RootDirectoryInfo!.FullName, ".autostep", "extensions");
+
+                var resolvedExtensions = await ResolveExtensionsAsync(extensionsDir, logFactory, config, cancelToken);
+
+                if (!resolvedExtensions.IsValid)
+                {
+                    // Not valid, display the appropriate errors and return.
+                    // Determine the set of errors.
+                    if (resolvedExtensions.Exception is AggregateException aggregate)
+                    {
+                        foreach (var nestedException in aggregate.InnerExceptions)
+                        {
+                            server.Window.ShowError($"Extension Load Error: {nestedException.Message}");
+                        }
+                    }
+                    else if (resolvedExtensions.Exception is object)
+                    {
+                        server.Window.ShowError($"Extension Load Error: {resolvedExtensions.Exception.Message}");
+                    }
+                    else
+                    {
+                        server.Window.ShowError($"Extension Load Error.");
+                    }
+
+                    return;
+                }
 
                 if (ProjectContext is object)
                 {
@@ -516,11 +549,19 @@ namespace AutoStep.LanguageServer
 
                 var newProject = new Project(true);
 
+                // Define file sets for interaction and test.
+                var interactionFiles = FileSet.Create(RootDirectoryInfo.FullName, config.GetInteractionFileGlobs(), new string[] { ".autostep/**" });
+                var testFiles = FileSet.Create(RootDirectoryInfo.FullName, config.GetTestFileGlobs(), new string[] { ".autostep/**" });
+
                 ILoadedExtensions<IExtensionEntryPoint>? extensions = null;
 
                 try
                 {
-                    extensions = await LoadExtensionsAsync(logFactory, config, cancelToken);
+                    // Install extensions.
+                    var installed = await resolvedExtensions.InstallAsync(cancelToken);
+
+                    // Load them.
+                    extensions = installed.LoadExtensionsFromPackages<IExtensionEntryPoint>(logFactory);
 
                     // Let our extensions extend the project.
                     foreach (var ext in extensions.ExtensionEntryPoints)
@@ -530,11 +571,14 @@ namespace AutoStep.LanguageServer
 
                     // Add any files from extension content.
                     // Treat the extension directory as two file sets (one for interactions, one for test).
-                    var extInteractionFiles = FileSet.Create(extensions.ExtensionsRootDir, new string[] { "*/content/**/*.asi" });
-                    var extTestFiles = FileSet.Create(extensions.ExtensionsRootDir, new string[] { "*/content/**/*.as" });
+                    var extInteractionFiles = FileSet.Create(extensionsDir, new string[] { "*/content/**/*.asi" });
+                    var extTestFiles = FileSet.Create(extensionsDir, new string[] { "*/content/**/*.as" });
 
                     newProject.MergeInteractionFileSet(extInteractionFiles);
                     newProject.MergeTestFileSet(extTestFiles);
+
+                    // Tell the watcher which packages we want to watch.
+                    packageWatcher.SyncPackages(installed.Packages.OfType<ILocalExtensionPackageMetadata>());
                 }
                 catch
                 {
@@ -563,11 +607,17 @@ namespace AutoStep.LanguageServer
                 // Feed diagnostics back.
                 // An error occurred.
                 // We won't have a project context any more.
-                server.Window.ShowError($"There is a problem with the project configuration: {ex.Message}");
+                server.Window.ShowError($"There is a problem with the project configuration: {ex.Message}; could not load project.");
             }
             catch (Exception ex)
             {
                 server.Window.ShowError($"Failed to load project: {ex.Message}");
+            }
+            finally
+            {
+                // Resume/start the package watcher.
+                packageWatcher.Reset();
+                packageWatcher.Start();
             }
         }
 
@@ -584,11 +634,13 @@ namespace AutoStep.LanguageServer
             });
         }
 
-        private async Task<ILoadedExtensions<IExtensionEntryPoint>> LoadExtensionsAsync(ILoggerFactory logFactory, IConfiguration projectConfig, CancellationToken cancelToken)
+        private async Task<IInstallablePackageSet> ResolveExtensionsAsync(string extensionsDir, ILoggerFactory logFactory, IConfiguration projectConfig, CancellationToken cancelToken)
         {
             var sourceSettings = new SourceSettings(RootDirectoryInfo!.FullName);
 
             var customSources = projectConfig.GetSection("extensionSources").Get<string[]>() ?? Array.Empty<string>();
+
+            var debugExtensionBuilds = projectConfig.GetValue("debugExtensionBuilds", false);
 
             if (customSources.Length > 0)
             {
@@ -596,12 +648,17 @@ namespace AutoStep.LanguageServer
                 sourceSettings.AppendCustomSources(customSources);
             }
 
-            var extensionsDir = Path.Combine(RootDirectoryInfo!.FullName, ".autostep", "extensions");
-            var setLoader = new ExtensionSetLoader(extensionsDir, logFactory, "autostep");
+            var setLoader = new ExtensionSetLoader(RootDirectoryInfo!.FullName, extensionsDir, logFactory, "autostep");
 
-            var loaded = await setLoader.LoadExtensionsAsync<IExtensionEntryPoint>(sourceSettings, projectConfig.GetExtensionConfiguration(), false, cancelToken);
+            var packageSet = await setLoader.ResolveExtensionsAsync(
+                sourceSettings,
+                projectConfig.GetPackageExtensionConfiguration(),
+                projectConfig.GetLocalExtensionConfiguration(),
+                false,
+                debugExtensionBuilds,
+                cancelToken);
 
-            return loaded;
+            return packageSet;
         }
 
         private static IConfiguration GetConfiguration(string rootDirectory, string? explicitConfigFile = null)
@@ -737,6 +794,11 @@ namespace AutoStep.LanguageServer
                 Source = "autostep-compiler",
                 Range = new Range(new Position(msg.StartLineNo - 1, msg.StartColumn - 1), new Position((msg.EndLineNo ?? msg.StartLineNo) - 1, endPosition.Value - 1)),
             };
+        }
+
+        public void Dispose()
+        {
+            packageWatcher.Dispose();
         }
     }
 }

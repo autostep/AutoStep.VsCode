@@ -55,7 +55,11 @@ export async function activate(context: ExtensionContext) {
     documentSelector: [{ scheme: 'file', language: 'autostep' }, {scheme: 'file', language: 'autostep-interaction' }],
     synchronize: {
       configurationSection: "autostep",
-      fileEvents: [ workspace.createFileSystemWatcher("**/*.as"), workspace.createFileSystemWatcher("**/*.asi"), workspace.createFileSystemWatcher("**/*.json") ]
+      fileEvents: [ 
+        workspace.createFileSystemWatcher("**/*.as"), 
+        workspace.createFileSystemWatcher("**/*.asi"), 
+        workspace.createFileSystemWatcher("**/*.json")
+      ]
     }
   };
 

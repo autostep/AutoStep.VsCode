@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using AutoStep.Extensions;
 using Microsoft.Extensions.Configuration;
 
@@ -29,18 +30,25 @@ namespace AutoStep.LanguageServer
             return config.GetValue("interactions", new[] { "**/*.asi" });
         }
 
-        /// <summary>
-        /// Get the set of configured extensions.
-        /// </summary>
-        /// <param name="config">The configuration set.</param>
-        /// <returns>The set of extensions.</returns>
-        public static ExtensionConfiguration[] GetExtensionConfiguration(this IConfiguration config)
+        public static PackageExtensionConfiguration[] GetPackageExtensionConfiguration(this IConfiguration config)
         {
-            var all = config.GetSection("extensions").Get<ExtensionConfiguration[]>();
+            var all = config.GetSection("extensions").Get<PackageExtensionConfiguration[]>() ?? Array.Empty<PackageExtensionConfiguration>();
 
             if (all.Any(p => string.IsNullOrWhiteSpace(p.Package)))
             {
-                throw new ProjectConfigurationException(ConfigurationMessages.PackageIdRequired);
+                throw new ProjectConfigurationException("Extensions must have a 'package' value containing the package ID.");
+            }
+
+            return all;
+        }
+
+        public static FolderExtensionConfiguration[] GetLocalExtensionConfiguration(this IConfiguration config)
+        {
+            var all = config.GetSection("localExtensions").Get<FolderExtensionConfiguration[]>() ?? Array.Empty<FolderExtensionConfiguration>();
+
+            if (all.Any(p => string.IsNullOrWhiteSpace(p.Folder)))
+            {
+                throw new ProjectConfigurationException("Local Extensions must have a 'folder' value containing the name of the extension's folder.");
             }
 
             return all;
