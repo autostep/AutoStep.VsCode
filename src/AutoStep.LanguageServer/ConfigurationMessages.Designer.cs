@@ -61,6 +61,15 @@ namespace AutoStep.LanguageServer {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Local Extensions must have a &apos;folder&apos; value containing the name of the extension&apos;s folder..
+        /// </summary>
+        internal static string FolderRequired {
+            get {
+                return ResourceManager.GetString("FolderRequired", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Extensions must have a specified Package Id..
         /// </summary>
         internal static string PackageIdRequired {

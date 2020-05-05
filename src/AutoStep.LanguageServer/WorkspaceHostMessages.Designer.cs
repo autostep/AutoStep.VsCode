@@ -61,6 +61,15 @@ namespace AutoStep.LanguageServer {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Unknown extension load error..
+        /// </summary>
+        internal static string ExtensionLoadError {
+            get {
+                return ResourceManager.GetString("ExtensionLoadError", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Cannot update file, not open: {0}.
         /// </summary>
         internal static string FileToUpdateNotOpen {

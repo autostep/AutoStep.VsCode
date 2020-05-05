@@ -534,7 +534,7 @@ namespace AutoStep.LanguageServer
                     }
                     else
                     {
-                        server.Window.ShowError($"Extension Load Error.");
+                        server.Window.ShowError(WorkspaceHostMessages.ExtensionLoadError);
                     }
 
                     return;
@@ -796,6 +796,7 @@ namespace AutoStep.LanguageServer
             };
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             packageWatcher.Dispose();

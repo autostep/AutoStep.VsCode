@@ -30,25 +30,35 @@ namespace AutoStep.LanguageServer
             return config.GetValue("interactions", new[] { "**/*.asi" });
         }
 
+        /// <summary>
+        /// Gets the configuration for package extensions from the 'extensions' config element.
+        /// </summary>
+        /// <param name="config">The configuration.</param>
+        /// <returns>A set of package configs.</returns>
         public static PackageExtensionConfiguration[] GetPackageExtensionConfiguration(this IConfiguration config)
         {
             var all = config.GetSection("extensions").Get<PackageExtensionConfiguration[]>() ?? Array.Empty<PackageExtensionConfiguration>();
 
             if (all.Any(p => string.IsNullOrWhiteSpace(p.Package)))
             {
-                throw new ProjectConfigurationException("Extensions must have a 'package' value containing the package ID.");
+                throw new ProjectConfigurationException(ConfigurationMessages.PackageIdRequired);
             }
 
             return all;
         }
 
+        /// <summary>
+        /// Gets the configuration for local folder extensions from the 'localExtensions' config element.
+        /// </summary>
+        /// <param name="config">The configuration.</param>
+        /// <returns>A set of package configs.</returns>
         public static FolderExtensionConfiguration[] GetLocalExtensionConfiguration(this IConfiguration config)
         {
             var all = config.GetSection("localExtensions").Get<FolderExtensionConfiguration[]>() ?? Array.Empty<FolderExtensionConfiguration>();
 
             if (all.Any(p => string.IsNullOrWhiteSpace(p.Folder)))
             {
-                throw new ProjectConfigurationException("Local Extensions must have a 'folder' value containing the name of the extension's folder.");
+                throw new ProjectConfigurationException(ConfigurationMessages.FolderRequired);
             }
 
             return all;
