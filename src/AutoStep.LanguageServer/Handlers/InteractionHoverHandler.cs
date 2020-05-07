@@ -73,11 +73,7 @@ namespace AutoStep.LanguageServer
                 {
                     string? documentation = GetMethodDocumentation(methodDef);
 
-                    var strBuilder = new StringBuilder();
-
-                    AddSignature(methodDef, strBuilder);
-
-                    var signatureContent = new MarkedString(strBuilder.ToString());
+                    var signatureContent = new MarkedString(GetSignature(methodDef));
 
                     MarkedStringsOrMarkupContent content;
 
@@ -101,8 +97,10 @@ namespace AutoStep.LanguageServer
             return null;
         }
 
-        private void AddSignature(InteractionMethod method, StringBuilder builder)
+        private string GetSignature(InteractionMethod method)
         {
+            var builder = new StringBuilder();
+
             if (supportsMarkdown)
             {
                 builder.AppendLine("```");
@@ -147,6 +145,8 @@ namespace AutoStep.LanguageServer
                 builder.AppendLine();
                 builder.Append("```");
             }
+
+            return builder.ToString();
         }
 
         /// <inheritdoc/>

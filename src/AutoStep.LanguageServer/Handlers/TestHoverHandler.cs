@@ -57,16 +57,24 @@ namespace AutoStep.LanguageServer
             return null;
         }
 
-        private Hover? GetHoverResult(StepReferenceElement stepRef, StepDefinition stepDef)
+        private Hover GetHoverResult(StepReferenceElement stepRef, StepDefinition stepDef)
         {
-            var definitionDescription = stepDef.Definition?.Description;
+            // Create a marked string for each section.
+            var stepSignature =
+                "```" + Environment.NewLine +
+                stepDef.Type + " " + stepDef.Declaration + Environment.NewLine +
+                "```";
+
+            var stepDocs = stepDef.GetDocumentation();
+
+            string? arguments = null;
 
             // Include argument values in the description.
             if (stepRef.Binding?.Arguments.Length > 0)
             {
-                var builder = new StringBuilder(definitionDescription);
+                var builder = new StringBuilder();
 
-                if (!string.IsNullOrWhiteSpace(definitionDescription))
+                if (!string.IsNullOrWhiteSpace(stepDocs))
                 {
                     builder.AppendLine(supportsMarkdown ? "  " : string.Empty);
                 }
@@ -88,23 +96,29 @@ namespace AutoStep.LanguageServer
                     builder.AppendLine("  ");
                 }
 
-                definitionDescription = builder.ToString();
+                arguments = builder.ToString();
             }
 
-            if (!string.IsNullOrEmpty(definitionDescription))
+            MarkedStringsOrMarkupContent content;
+
+            if (stepDocs is object && arguments is object)
             {
-                var markupContent = new MarkupContent();
-                markupContent.Value = definitionDescription;
-                markupContent.Kind = supportsMarkdown ? MarkupKind.Markdown : MarkupKind.PlainText;
-
-                return new Hover
-                {
-                    Contents = new MarkedStringsOrMarkupContent(markupContent),
-                    Range = stepRef.Range(),
-                };
+                content = new MarkedStringsOrMarkupContent(stepSignature, stepDocs, arguments);
+            }
+            else if (stepDocs is object || arguments is object)
+            {
+                content = new MarkedStringsOrMarkupContent(stepSignature, stepDocs ?? arguments);
+            }
+            else
+            {
+                content = new MarkedStringsOrMarkupContent(stepSignature);
             }
 
-            return null;
+            return new Hover
+            {
+                Contents = content,
+                Range = stepRef.Range(),
+            };
         }
 
         /// <inheritdoc/>

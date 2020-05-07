@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using AutoStep.Definitions;
 using AutoStep.Elements;
 using AutoStep.Elements.Interaction;
 using AutoStep.Elements.Parts;
@@ -105,7 +106,7 @@ namespace AutoStep.LanguageServer
                             // Label displayed to the user in the list.
                             Label = GetCompletionString(m, stepRef, CompletionStringMode.Label, out var _),
                             Kind = CompletionItemKind.Snippet,
-                            Documentation = m.Match.Definition.Definition?.Description,
+                            Documentation = GetDocBlock(m.Match.Definition),
 
                             // Text used by VS Code to do in-memory filtering.
                             FilterText = GetCompletionString(m, stepRef, CompletionStringMode.Filter, out var _),
@@ -138,6 +139,18 @@ namespace AutoStep.LanguageServer
             }
 
             return completionList;
+        }
+
+        private StringOrMarkupContent? GetDocBlock(StepDefinition definition)
+        {
+            var docs = definition.GetDocumentation();
+
+            if (docs is object)
+            {
+                return new StringOrMarkupContent(new MarkupContent { Value = docs, Kind = MarkupKind.Markdown });
+            }
+
+            return null;
         }
 
         private IEnumerable<ExpandedMatch> ExpandPlaceholders(IEnumerable<IMatchResult> matches)
