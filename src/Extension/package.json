@@ -4,6 +4,7 @@
     "description": "AutoStep BDD Testing Support",
     "version": "0.0.1",
     "publisher": "autostep",
+    "preview": true,
     "license": "MIT",
     "icon": "AutoStep.png",
     "engines": {

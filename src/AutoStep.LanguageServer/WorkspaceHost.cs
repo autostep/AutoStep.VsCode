@@ -532,7 +532,9 @@ namespace AutoStep.LanguageServer
 
                 var extensionsDir = Path.Combine(RootDirectoryInfo!.FullName, ".autostep", "extensions");
 
-                var resolvedExtensions = await ResolveExtensionsAsync(extensionsDir, logFactory, config, cancelToken);
+                var environment = new AutoStepEnvironment(RootDirectoryInfo.FullName, extensionsDir);
+
+                var resolvedExtensions = await ResolveExtensionsAsync(environment, logFactory, config, cancelToken);
 
                 if (!resolvedExtensions.IsValid)
                 {
@@ -653,7 +655,7 @@ namespace AutoStep.LanguageServer
             });
         }
 
-        private async Task<IInstallablePackageSet> ResolveExtensionsAsync(string extensionsDir, ILoggerFactory logFactory, IConfiguration projectConfig, CancellationToken cancelToken)
+        private async Task<IInstallablePackageSet> ResolveExtensionsAsync(IAutoStepEnvironment environment, ILoggerFactory logFactory, IConfiguration projectConfig, CancellationToken cancelToken)
         {
             var sourceSettings = new SourceSettings(RootDirectoryInfo!.FullName);
 
@@ -667,7 +669,7 @@ namespace AutoStep.LanguageServer
                 sourceSettings.AppendCustomSources(customSources);
             }
 
-            var setLoader = new ExtensionSetLoader(RootDirectoryInfo!.FullName, extensionsDir, logFactory, "autostep");
+            var setLoader = new ExtensionSetLoader(environment, logFactory, "autostep");
 
             var packageSet = await setLoader.ResolveExtensionsAsync(
                 sourceSettings,
