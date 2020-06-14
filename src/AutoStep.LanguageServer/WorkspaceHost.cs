@@ -380,7 +380,7 @@ namespace AutoStep.LanguageServer
                 return Enumerable.Empty<IMatchResult>();
             }
 
-            return ProjectContext.Project.Compiler.GetPossibleStepDefinitions(stepRef);
+            return ProjectContext.Project.Builder.GetPossibleStepDefinitions(stepRef);
         }
 
         /// <inheritdoc/>
@@ -417,7 +417,7 @@ namespace AutoStep.LanguageServer
             if (ProjectContext is object)
             {
                 // Get the method table.
-                var interactionSet = ProjectContext.Project.Compiler.GetCurrentInteractionSet();
+                var interactionSet = ProjectContext.Project.Builder.GetCurrentInteractionSet();
 
                 if (interactionSet?.ExtendedMethodReferences is object)
                 {
@@ -461,7 +461,7 @@ namespace AutoStep.LanguageServer
 
                 var project = workspace.ProjectContext!.Project;
 
-                var builder = project.Compiler;
+                var builder = project.Builder;
 
                 await builder.CompileAsync(logFactory, cancelToken);
 
