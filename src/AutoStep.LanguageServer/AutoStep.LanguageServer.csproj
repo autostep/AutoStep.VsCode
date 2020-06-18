@@ -7,7 +7,7 @@
     </PropertyGroup>
     
     <ItemGroup>
-        <PackageReference Include="AutoStep" Version="1.0.0-develop.324" />
+        <PackageReference Include="AutoStep" Version="1.0.0-develop.327" />
         <PackageReference Include="AutoStep.Extensions" Version="1.0.0-develop.68" />
         <PackageReference Include="Microsoft.Extensions.Hosting" Version="3.1.2" />
         <PackageReference Include="OmniSharp.Extensions.LanguageServer" Version="0.15.0" />
