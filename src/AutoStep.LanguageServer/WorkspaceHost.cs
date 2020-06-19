@@ -718,14 +718,19 @@ namespace AutoStep.LanguageServer
 
             taskQueue.QueueTask(arg, async (arg, cancelToken) =>
             {
-                await callback(arg, cancelToken);
-
-                if (Interlocked.Decrement(ref currentBackgroundTasks) == 0)
+                try
                 {
-                    // Dequeue all the things.
-                    while (buildCompletion.TryDequeue(out var invoke))
+                    await callback(arg, cancelToken);
+                }
+                finally
+                {
+                    if (Interlocked.Decrement(ref currentBackgroundTasks) == 0)
                     {
-                        invoke();
+                        // Dequeue all the things.
+                        while (buildCompletion.TryDequeue(out var invoke))
+                        {
+                            invoke();
+                        }
                     }
                 }
             });
